@@ -125,8 +125,7 @@ long dts_gpio_state;
 #define DISP_DEFAULT_UI_LAYER_ID (DDP_OVL_LAYER_MUN-1)
 #define DISP_CHANGED_UI_LAYER_ID (DDP_OVL_LAYER_MUN-2)
 #define NOT_REFERENCED(x)	{ (x) = (x); }
-void console_lock(void);
-void console_unlock(void);
+
 #ifdef CONFIG_MTK_AEE_FEATURE
 #  define CHECK_RET(expr)					\
 do {								\
@@ -2767,6 +2766,9 @@ static int mtkfb_remove(struct platform_device *pdev)
 	MSG_FUNC_ENTER();
 	/* FIXME: wait till completion of pending events */
 
+	atomic_set(&prim_panel_is_on, false);
+	cancel_delayed_work(&prim_panel_work);
+
 	fbdev->state = MTKFB_DISABLED;
 	mtkfb_free_resources(fbdev, saved_state);
 
@@ -3102,9 +3104,13 @@ int mtkfb_prim_panel_unblank(int timeout)
 
 	if (prim_fbi) {
 		fbdev = (struct mtkfb_device *)prim_fbi->par;
-		wait_event_timeout(fbdev->resume_wait_q,
+		ret = wait_event_timeout(fbdev->resume_wait_q,
 				!atomic_read(&fbdev->resume_pending),
 				msecs_to_jiffies(WAIT_RESUME_TIMEOUT));
+		if (!ret) {
+			printk("Primary fb resume timeout\n");
+			return -ETIMEDOUT;
+		}
 		console_lock();
 		if (!lock_fb_info(prim_fbi)) {
 			console_unlock();
